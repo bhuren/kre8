@@ -25,15 +25,6 @@ sed -i '1s/^/force_color_prompt=yes\n/' ~/.bashrc
 swapoff -a
 sed -i '/\sswap\s/ s/^\(.*\)$/#\1/g' /etc/fstab
 
-
-### remove packages
-kubeadm reset -f || true
-crictl rm --force $(crictl ps -a -q) || true
-apt-mark unhold kubelet kubeadm kubectl kubernetes-cni || true
-apt-get remove -y docker.io containerd kubelet kubeadm kubectl kubernetes-cni || true
-apt-get autoremove -y
-systemctl daemon-reload
-
 #install nfs-common utils
 apt install nfs-common -y
 

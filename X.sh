@@ -119,11 +119,13 @@ ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./nfs.sh $master_
 scp -o StrictHostKeyChecking=no monitoring.sh azureuser@$master_pub_ip:~
 echo "Installing monitoring stack on cluster..."
 ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./monitoring.sh"
+sleep 5
 
 # Copy awx.sh to the Master VM amd execute the script to install AWX
 scp -o StrictHostKeyChecking=no awx.sh azureuser@$master_pub_ip:~
 echo "Running awx.sh on Cluster..."
 ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./awx.sh"
+sleep 5
 
 #copying kube-config file to local system
 echo "Copying kubeconfig from Master VM to local machine..."
@@ -160,6 +162,25 @@ while true; do
 done
 echo "All pods in all namespaces are running."
 
+
+awx_port=$(kubectl get -n awx svc/awx-service | grep NodePort | awk '{print $5}' | cut -d ':' -f2 | cut -d '/' -f1)
+
+echo "Opening port $awx_port for Worker VM for AWX NodePort"
+# Extract NSG name from the VM's network interface
+vmnicname1=$(az vm show --resource-group $resource_group --name worker --query 'networkProfile.networkInterfaces[0].id' -o tsv | cut -d '/' -f9 | sed -e 's/\"//g' -e 's/\,//g')
+# Fetch NSG name based on the NIC
+nsg_name1=$(az network nic show --resource-group $resource_group --name $vmnicname1 --query 'networkSecurityGroup.id' -o tsv | cut -d '/' -f9)
+# Open port $awx_port on Worker VM for AWX
+az network nsg rule create \
+  --resource-group $resource_group \
+  --nsg-name $nsg_name1 \
+  --name kubernetesApiPort \
+  --protocol Tcp \
+  --priority 500 \
+  --destination-port-range $awx_port \
+  --access Allow
+
+
 #open all the ports!
 kubectl --namespace monitoring port-forward svc/grafana 3000 > /dev/null 2>&1 &
 kubectl --namespace monitoring port-forward svc/prometheus-k8s 9090 > /dev/null 2>&1 &
@@ -172,7 +193,7 @@ echo "Access Prometheus over kube-proxy: http://localhost:9090"
 echo "Access Alert-manager over kube-proxy: http://localhost:9093"
 
 # AWX kubectl proxy
-awx_port=$(kubectl get -n awx svc/awx-service | grep ClusterIP | awk '{print $5}' | cut -d '/' -f1)
+
 awx_password=$(kubectl get secret -n awx awx-admin-password -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}')
 sleep 10
 kubectl --namespace awx port-forward svc/awx-service 9099:80 > /dev/null 2>&1 &
@@ -182,7 +203,7 @@ disown
 
 echo
 echo "AWX admin password: $awx_password"
-echo "Access AWX: http://localhost:9099"
+echo "Access AWX: http://$worker_pub_ip:$awx_port"
 echo
 
 ET=$(date +%s)

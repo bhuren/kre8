@@ -24,16 +24,6 @@ swapoff -a
 sed -i '/\sswap\s/ s/^\(.*\)$/#\1/g' /etc/fstab
 
 
-### remove packages
-kubeadm reset -f || true
-crictl rm --force $(crictl ps -a -q) || true
-apt-mark unhold kubelet kubeadm kubectl kubernetes-cni || true
-apt-get remove -y docker.io containerd kubelet kubeadm kubectl kubernetes-cni || true
-apt-get autoremove -y
-systemctl daemon-reload
-
-
-
 ### install podman
 . /etc/os-release
 echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_${VERSION_ID}/ /" | sudo tee /etc/apt/sources.list.d/devel:kubic:libcontainers:testing.list
