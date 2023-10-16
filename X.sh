@@ -41,7 +41,16 @@ az vm create \
 # Provision VM2
 az vm create \
   --resource-group "$resource_group" \
-  --name "worker" \
+  --name "worker1" \
+  --image "Canonical:0001-com-ubuntu-server-focal:20_04-lts:latest" \
+  --size "Standard_DS2_v2" \
+  --admin-username "azureuser" \
+  --generate-ssh-keys
+
+# Provision VM3
+az vm create \
+  --resource-group "$resource_group" \
+  --name "worker2" \
   --image "Canonical:0001-com-ubuntu-server-focal:20_04-lts:latest" \
   --size "Standard_DS2_v2" \
   --admin-username "azureuser" \
@@ -49,16 +58,20 @@ az vm create \
 
 # Fetch IP Addresses of VMs
 master_pub_ip=$(az vm list-ip-addresses -g "$resource_group" -n "master" --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
-worker_pub_ip=$(az vm list-ip-addresses -g "$resource_group" -n "worker" --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
-
+worker1_pub_ip=$(az vm list-ip-addresses -g "$resource_group" -n "worker1" --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
+worker2_pub_ip=$(az vm list-ip-addresses -g "$resource_group" -n "worker2" --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
 master_pvt_ip=$(az vm list-ip-addresses -g "$resource_group" -n "master" --query "[0].virtualMachine.network.privateIpAddresses[0]" -o tsv)
-worker_pvt_ip=$(az vm list-ip-addresses -g "$resource_group" -n "worker" --query "[0].virtualMachine.network.privateIpAddresses[0]" -o tsv)
+worker1_pvt_ip=$(az vm list-ip-addresses -g "$resource_group" -n "worker1" --query "[0].virtualMachine.network.privateIpAddresses[0]" -o tsv)
+worker2_pvt_ip=$(az vm list-ip-addresses -g "$resource_group" -n "worker2" --query "[0].virtualMachine.network.privateIpAddresses[0]" -o tsv)
 
 # Print IP Addresses
 echo "Public IP of VM1: $master_pub_ip"
-echo "Public IP of VM2: $worker_pub_ip"
+echo "Public IP of VM2: $worker1_pub_ip"
+echo "Public IP of VM3: $worker2_pub_ip"
+
 echo "Private IP of VM1: $master_pvt_ip"
-echo "Private IP of VM2: $worker_pvt_ip"
+echo "Private IP of VM2: $worker1_pvt_ip"
+echo "Private IP of VM3: $worker2_pvt_ip"
 
 echo "Opening port 6443 on Azure BSG for Master VM..."
 # Extract NSG name from the VM's network interface
@@ -81,7 +94,8 @@ az network nsg rule create \
 scp -o StrictHostKeyChecking=no master.sh azureuser@$master_pub_ip:~
 
 # Copy worker.sh to the Worker VM
-scp -o StrictHostKeyChecking=no worker.sh azureuser@$worker_pub_ip:~
+scp -o StrictHostKeyChecking=no worker.sh azureuser@$worker1_pub_ip:~
+scp -o StrictHostKeyChecking=no worker.sh azureuser@$worker2_pub_ip:~
 
 # SSH into Master VM and run master.sh as sudo to install kubeadm
 # Pass the public IP of the master as an argument
@@ -90,7 +104,8 @@ ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./master.sh $mast
 
 # SSH into Worker VM and run worker.sh as sudo to install kubeadm
 echo "Running worker.sh on Worker VM..."
-ssh -o StrictHostKeyChecking=no azureuser@$worker_pub_ip "sudo ./worker.sh"
+ssh -o StrictHostKeyChecking=no azureuser@$worker1_pub_ip "sudo ./worker.sh"
+ssh -o StrictHostKeyChecking=no azureuser@$worker2_pub_ip "sudo ./worker.sh"
 
 # Generate kubeadm join token on the master node
 echo "Generating kubeadm join token on Master VM..."
@@ -101,7 +116,8 @@ echo "Kubeadm Join Command: $join_command"
 
 # Use the join command to join the worker node to the cluster
 echo "Joining Worker VM to the cluster..."
-ssh -o StrictHostKeyChecking=no azureuser@$worker_pub_ip "echo '$join_command' | sudo sh"
+ssh -o StrictHostKeyChecking=no azureuser@$worker1_pub_ip "echo '$join_command' | sudo sh"
+ssh -o StrictHostKeyChecking=no azureuser@$worker2_pub_ip "echo '$join_command' | sudo sh"
 
 # Copy nfs.sh to the Master VM and install NFS provisioner on the cluster
 scp -o StrictHostKeyChecking=no nfs.sh azureuser@$master_pub_ip:~
@@ -138,7 +154,7 @@ done
 echo "Waiting for awx-service to be created..."
 while ! kubectl get svc awx-service -n awx &> /dev/null; do
   echo "awx-service not yet created, waiting..."
-  sleep 20
+  sleep 60
 done
 echo "awx-service exists."
 
@@ -150,14 +166,17 @@ while true; do
     break
   fi
   echo "Waiting for pods to be Running..."
-  sleep 20
+  sleep 60
 done
 echo "All pods in all namespaces are running."
 
 #open all the ports!
 kubectl --namespace monitoring port-forward svc/grafana 3000 > /dev/null 2>&1 &
+sleep 10
 kubectl --namespace monitoring port-forward svc/prometheus-k8s 9090 > /dev/null 2>&1 &
+sleep 10
 kubectl --namespace monitoring port-forward svc/alertmanager-main 9093 > /dev/null 2>&1 &
+sleep 10
 
 
 echo "Access Grafana proxy over kube-proxy: http://localhost:3000"
@@ -166,8 +185,10 @@ echo "Access Alert-manager over kube-proxy: http://localhost:9093"
 
 # AWX kubectl proxy
 awx_port=$(kubectl get -n awx svc/awx-service | grep ClusterIP | awk '{print $5}' | cut -d '/' -f1)
-kubectl --namespace awx port-forward svc/awx-service 8999:$awx_port > /dev/null 2>&1 &
 awx_password=$(kubectl get secret -n awx awx-admin-password -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}')
+
+kubectl --namespace awx port-forward svc/awx-service 8999:$awx_port > /dev/null 2>&1 &
+sleep 10
 
 disown
 
