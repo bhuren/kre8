@@ -134,6 +134,26 @@ until kubectl get nodes &> /dev/null; do
   sleep 5
 done
 
+# Wait for all pods in all namespaces to be running
+echo "Waiting for all pods in all namespaces to be running..."
+while true; do
+  ALL_PODS=$(kubectl get pods --all-namespaces --no-headers -o custom-columns=":status.phase")
+  if ! echo "${ALL_PODS}" | grep -q "Pending\|ContainerCreating\|Init\|Error"; then
+    break
+  fi
+  echo "Waiting for pods to be Running..."
+  sleep 10
+done
+echo "All pods in all namespaces are running."
+
+# Wait for awx-service to exist
+echo "Waiting for awx-service to be created..."
+while ! kubectl get svc awx-service -n awx &> /dev/null; do
+  echo "awx-service not yet created, waiting..."
+  sleep 20
+done
+echo "awx-service exists."
+
 #open all the ports!
 kubectl --namespace monitoring port-forward svc/grafana 3000 > /dev/null 2>&1 &
 kubectl --namespace monitoring port-forward svc/prometheus-k8s 9090 > /dev/null 2>&1 &
@@ -144,32 +164,16 @@ echo "Access Grafana proxy over kube-proxy: http://localhost:3000"
 echo "Access Prometheus over kube-proxy: http://localhost:9090"
 echo "Access Alert-manager over kube-proxy: http://localhost:9093"
 
-# Wait for all pods in awx namespace to be running
-echo "Waiting for all pods in awx namespace to be running..."
-while IFS= read -r pod; do
-  while [[ $(kubectl get pods "$pod" -n awx -o 'jsonpath={..status.phase}') != "Running" ]]; do
-    echo "Waiting for pod $pod to be Running..."
-    sleep 20
-  done
-done < <(kubectl get pods -n awx --no-headers -o custom-columns=":metadata.name")
-
-# Wait for awx-service to exist
-echo "Waiting for awx-service to be created..."
-while ! kubectl get svc awx-service -n awx &> /dev/null; do
-  echo "awx-service not yet created, waiting..."
-  sleep 5
-done
-echo "awx-service exists."
-
 # AWX kubectl proxy
 awx_port=$(kubectl get -n awx svc/awx-service | grep ClusterIP | awk '{print $5}' | cut -d '/' -f1)
 kubectl --namespace awx port-forward svc/awx-service 8999:$awx_port > /dev/null 2>&1 &
 awx_password=$(kubectl get secret -n awx awx-admin-password -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}')
 
+disown
 
 echo
 echo "AWX admin password: $awx_password"
-echo "Access AWX: http://localhost:$awx_port"
+echo "Access AWX: http://localhost:8999"
 echo
 
 ET=$(date +%s)
