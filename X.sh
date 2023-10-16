@@ -134,6 +134,14 @@ until kubectl get nodes &> /dev/null; do
   sleep 5
 done
 
+# Wait for awx-service to exist
+echo "Waiting for awx-service to be created..."
+while ! kubectl get svc awx-service -n awx &> /dev/null; do
+  echo "awx-service not yet created, waiting..."
+  sleep 20
+done
+echo "awx-service exists."
+
 # Wait for all pods in all namespaces to be running
 echo "Waiting for all pods in all namespaces to be running..."
 while true; do
@@ -142,17 +150,9 @@ while true; do
     break
   fi
   echo "Waiting for pods to be Running..."
-  sleep 10
-done
-echo "All pods in all namespaces are running."
-
-# Wait for awx-service to exist
-echo "Waiting for awx-service to be created..."
-while ! kubectl get svc awx-service -n awx &> /dev/null; do
-  echo "awx-service not yet created, waiting..."
   sleep 20
 done
-echo "awx-service exists."
+echo "All pods in all namespaces are running."
 
 #open all the ports!
 kubectl --namespace monitoring port-forward svc/grafana 3000 > /dev/null 2>&1 &
