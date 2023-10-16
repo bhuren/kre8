@@ -42,7 +42,6 @@ kind: AWX
 metadata:
   name: awx
 spec:
-  service_type: nodeport
   projects_persistence: true
   projects_storage_access_mode: ReadWriteOnce
   web_extra_volume_mounts: |
@@ -53,6 +52,7 @@ spec:
       persistentVolumeClaim:
         claimName:  awx-static-data-pvc
 EOF
+
 
 
 

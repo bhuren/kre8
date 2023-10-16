@@ -1,5 +1,7 @@
 #!/bin/bash
 
+ST=$(date +%s)
+
 # Prompt for Azure Credentials
 subscription_id=8f50f42f-3ef8-4aa5-8379-5c48f89bbefc
 client_id=a530e812-4ce3-4b39-8005-6f4802b92b16
@@ -58,6 +60,21 @@ echo "Public IP of VM2: $worker_pub_ip"
 echo "Private IP of VM1: $master_pvt_ip"
 echo "Private IP of VM2: $worker_pvt_ip"
 
+echo "Opening port 6443 on Azure BSG for Master VM..."
+# Extract NSG name from the VM's network interface
+vmnicname=$(az vm show --resource-group $resource_group --name master --query 'networkProfile.networkInterfaces[0].id' -o tsv | cut -d '/' -f9 | sed -e 's/\"//g' -e 's/\,//g')
+# Fetch NSG name based on the NIC
+nsg_name=$(az network nic show --resource-group $resource_group --name $vmnicname --query 'networkSecurityGroup.id' -o tsv | cut -d '/' -f9)
+# Open port 6443 on Master VM for kubectl
+az network nsg rule create \
+  --resource-group $resource_group \
+  --nsg-name $nsg_name \
+  --name kubernetesApiPort \
+  --protocol Tcp \
+  --priority 500 \
+  --destination-port-range 6443 \
+  --access Allow
+
 
 ## KUEBADM
 # Copy master.sh to the Master VM
@@ -109,53 +126,32 @@ ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo cat /etc/kubernet
 echo "Updating kubeconfig with Public IP..."
 sed -i "s/https:\/\/[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\:6443/https:\/\/$master_pub_ip:6443/g" ~/.kube/config
 
-#waiting for awx-service Nodeport to be initialised and getting the port number
-while [[ $(kubectl get svc awx-service -n awx -o 'jsonpath={..spec.type}') != "NodePort" ]]; do
-  echo "waiting for AWX NodePort service to be created..."
+
+# Wait for Kubernetes API to be reachable
+echo "Waiting for Kubernetes API to be reachable..."
+until kubectl get nodes &> /dev/null; do
+  echo "Kubernetes API is not yet reachable, retrying in 5 seconds..."
   sleep 5
 done
 
-
+#open all the ports!
 kubectl --namespace monitoring port-forward svc/grafana 3000 > /dev/null 2>&1 &
 kubectl --namespace monitoring port-forward svc/prometheus-k8s 9090 > /dev/null 2>&1 &
 kubectl --namespace monitoring port-forward svc/alertmanager-main 9093 > /dev/null 2>&1 &
 
-awx_port=$(kubectl get -n awx svc/awx-service | grep NodePort | cut -d ':' -f2 | cut -d '/' -f1)
+awx_port=$(kubectl get -n awx svc/awx-service | grep ClusterIP | awk '{print $5}' | cut -d '/' -f1)
+kubectl --namespace awx port-forward svc/awx-service 8076:80 > /dev/null 2>&1 &
 
-echo "Opening port 6443 on Master VM..."
-# Extract NSG name from the VM's network interface
-vmnicname=$(az vm show --resource-group $resource_group --name master --query 'networkProfile.networkInterfaces[0].id' -o tsv | cut -d '/' -f9 | sed -e 's/\"//g' -e 's/\,//g')
-# Fetch NSG name based on the NIC
-nsg_name=$(az network nic show --resource-group $resource_group --name $vmnicname --query 'networkSecurityGroup.id' -o tsv | cut -d '/' -f9)
-# Open port 6443 on Master VM for kubectl
-az network nsg rule create \
-  --resource-group $resource_group \
-  --nsg-name $nsg_name \
-  --name kubernetesApiPort \
-  --protocol Tcp \
-  --priority 500 \
-  --destination-port-range 6443 \
-  --access Allow
+awx_password=$(kubectl get secret awx-admin-password -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}')
 
-
-echo "Opening AWX Nodeport on Worker VM..."
-# Extract NSG name from the VM's network interface
-vmnicname=$(az vm show --resource-group $resource_group --name worker --query 'networkProfile.networkInterfaces[0].id' -o tsv | cut -d '/' -f9 | sed -e 's/\"//g' -e 's/\,//g')
-# Fetch NSG name based on the NIC
-nsg_name=$(az network nic show --resource-group $resource_group --name $vmnicname --query 'networkSecurityGroup.id' -o tsv | cut -d '/' -f9)
-# Open port 6443 on Master VM for kubectl
-az network nsg rule create \
-  --resource-group $resource_group \
-  --nsg-name $nsg_name \
-  --name kubernetesApiPort \
-  --protocol Tcp \
-  --priority 500 \
-  --destination-port-range $awx_port \
-  --access Allow
 
 echo
-echo "Access AWX: http://$worker_pvt_ip:$awx_port"
+echo "Access AWX: http://localhost:$awx_port"
 echo "Access Grafana proxy over kube-proxy: http://localhost:3000"
 echo "Access Prometheus over kube-proxy: http://localhost:9090"
 echo "Access Alert-manager over kube-proxy: http://localhost:9093"
 echo
+
+ET=$(date +%s)
+timepassd=$((ET - ST))
+echo "Time elapsed: ${timepassd} seconds"
