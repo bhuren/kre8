@@ -109,6 +109,18 @@ ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo cat /etc/kubernet
 echo "Updating kubeconfig with Public IP..."
 sed -i "s/https:\/\/[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\:6443/https:\/\/$master_pub_ip:6443/g" ~/.kube/config
 
+#waiting for awx-service Nodeport to be initialised and getting the port number
+while [[ $(kubectl get svc awx-service -n awx -o 'jsonpath={..spec.type}') != "NodePort" ]]; do
+  echo "waiting for AWX NodePort service to be created..."
+  sleep 5
+done
+
+
+kubectl --namespace monitoring port-forward svc/grafana 3000 > /dev/null 2>&1 &
+kubectl --namespace monitoring port-forward svc/prometheus-k8s 9090 > /dev/null 2>&1 &
+kubectl --namespace monitoring port-forward svc/alertmanager-main 9093 > /dev/null 2>&1 &
+
+awx_port=$(kubectl get -n awx svc/awx-service | grep NodePort | cut -d ':' -f2 | cut -d '/' -f1)
 
 echo "Opening port 6443 on Master VM..."
 # Extract NSG name from the VM's network interface
@@ -124,3 +136,26 @@ az network nsg rule create \
   --priority 500 \
   --destination-port-range 6443 \
   --access Allow
+
+
+echo "Opening AWX Nodeport on Worker VM..."
+# Extract NSG name from the VM's network interface
+vmnicname=$(az vm show --resource-group $resource_group --name worker --query 'networkProfile.networkInterfaces[0].id' -o tsv | cut -d '/' -f9 | sed -e 's/\"//g' -e 's/\,//g')
+# Fetch NSG name based on the NIC
+nsg_name=$(az network nic show --resource-group $resource_group --name $vmnicname --query 'networkSecurityGroup.id' -o tsv | cut -d '/' -f9)
+# Open port 6443 on Master VM for kubectl
+az network nsg rule create \
+  --resource-group $resource_group \
+  --nsg-name $nsg_name \
+  --name kubernetesApiPort \
+  --protocol Tcp \
+  --priority 500 \
+  --destination-port-range $awx_port \
+  --access Allow
+
+echo
+echo "Access AWX: http://$worker_pvt_ip:$awx_port"
+echo "Access Grafana proxy over kube-proxy: http://localhost:3000"
+echo "Access Prometheus over kube-proxy: http://localhost:9090"
+echo "Access Alert-manager over kube-proxy: http://localhost:9093"
+echo
