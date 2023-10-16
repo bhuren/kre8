@@ -1,4 +1,5 @@
 #!/bin/bash
+
 git clone https://github.com/ansible/awx-operator.git
 cd awx-operator/
 RELEASE_TAG=`curl -s https://api.github.com/repos/ansible/awx-operator/releases/latest | grep tag_name | cut -d '"' -f 4`

@@ -115,16 +115,16 @@ echo "Running nfs.sh .."
 ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./nfs.sh $master_pvt_ip $nfs_share"
 
 
-# Copy monitoring.sh to the Master VM
-scp -o StrictHostKeyChecking=no monitoring.sh azureuser@$master_pub_ip:~
-echo "Installing monitoring stack on cluster..."
-ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./monitoring.sh"
-sleep 5
-
 # Copy awx.sh to the Master VM amd execute the script to install AWX
 scp -o StrictHostKeyChecking=no awx.sh azureuser@$master_pub_ip:~
 echo "Running awx.sh on Cluster..."
 ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./awx.sh"
+sleep 5
+
+# Copy monitoring.sh to the Master VM
+scp -o StrictHostKeyChecking=no monitoring.sh azureuser@$master_pub_ip:~
+echo "Installing monitoring stack on cluster..."
+ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./monitoring.sh"
 sleep 5
 
 #copying kube-config file to local system
