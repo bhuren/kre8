@@ -196,8 +196,6 @@ echo "Access Alert-manager over kube-proxy: http://localhost:9093"
 
 awx_password=$(kubectl get secret -n awx awx-admin-password -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}')
 sleep 10
-kubectl --namespace awx port-forward svc/awx-service 9099:80 > /dev/null 2>&1 &
-
 
 disown
 

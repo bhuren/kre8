@@ -24,6 +24,16 @@ swapoff -a
 sed -i '/\sswap\s/ s/^\(.*\)$/#\1/g' /etc/fstab
 
 
+### remove packages
+kubeadm reset -f || true
+crictl rm --force $(crictl ps -a -q) || true
+apt-mark unhold kubelet kubeadm kubectl kubernetes-cni || true
+apt-get remove -y docker.io containerd kubelet kubeadm kubectl kubernetes-cni || true
+apt-get autoremove -y
+systemctl daemon-reload
+
+
+
 ### install podman
 . /etc/os-release
 echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_${VERSION_ID}/ /" | sudo tee /etc/apt/sources.list.d/devel:kubic:libcontainers:testing.list
@@ -155,6 +165,9 @@ tar xzf ${ETCDCTL_VERSION_FULL}.tar.gz ${ETCDCTL_VERSION_FULL}/etcdctl
 mv ${ETCDCTL_VERSION_FULL}/etcdctl /usr/bin/
 rm -rf ${ETCDCTL_VERSION_FULL} ${ETCDCTL_VERSION_FULL}.tar.gz
 
+
+
+
 # creating dangerous NFS share on root and sharing it
 mkdir $2
 apt install nfs-kernel-server -y
@@ -165,3 +178,9 @@ systemctl restart nfs-server
 
 # install some dependencies
 apt install git build-essential curl jq  -y
+
+
+#Kubeadm cluster initiate
+#echo
+#echo "### COMMAND TO ADD A WORKER NODE ###"
+#ubeadm token create --print-join-command --ttl 0
