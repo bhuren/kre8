@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/bin/sh
+
 git clone https://github.com/prometheus-operator/kube-prometheus.git
 cd kube-prometheus
 kubectl create -f manifests/setup

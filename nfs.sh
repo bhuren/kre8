@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/bin/sh
+
 curl -L https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
 helm repo add nfs-subdir-external-provisioner https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
 kubectl create ns nfs-provisioner

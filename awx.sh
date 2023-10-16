@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 git clone https://github.com/ansible/awx-operator.git
 cd awx-operator/
@@ -37,7 +37,6 @@ kubectl wait --for=condition=Ready pod -l app=awx-operator --timeout=300s
 
 # apply AWX config and install
 cat <<EOF | kubectl apply -f -
----
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
