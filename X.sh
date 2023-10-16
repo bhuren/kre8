@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Prompt for Azure Credentials
-read -p "Subscritption ID: " subscription_id
-read -p "Enter CLient ID: " client_id
-read -p "Enter CLient Secret: " client_secret
-read -p "Enter Tenant ID: " tenant_id
+subscription_id=8f50f42f-3ef8-4aa5-8379-5c48f89bbefc
+client_id=a530e812-4ce3-4b39-8005-6f4802b92b16
+client_secret=IOm8Q~HUuQIQwoz1VC2a3AyFHzJfd55VzgbTDdw0
+tenant_id=82d919c0-736c-416b-b827-595e94597471
 read -p "Enter Resource Group Name: " resource_group
 read -p "Enter Location (e.g., eastus): " location
 
