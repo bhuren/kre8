@@ -10,8 +10,6 @@ tenant_id=82d919c0-736c-416b-b827-595e94597471
 read -p "Enter Resource Group Name: " resource_group
 read -p "Enter Location (e.g., eastus): " location
 
-nfs_share=/nfsX
-
 # Check if Azure CLI is installed, if not, install it
 if ! command -v az &> /dev/null; then
     echo "Azure CLI not found. Installing..."
@@ -88,7 +86,7 @@ scp -o StrictHostKeyChecking=no worker.sh azureuser@$worker_pub_ip:~
 # SSH into Master VM and run master.sh as sudo to install kubeadm
 # Pass the public IP of the master as an argument
 echo "Running master.sh on Master VM..."
-ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./master.sh $master_pub_ip $nfs_share"
+ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./master.sh $master_pub_ip"
 
 # SSH into Worker VM and run worker.sh as sudo to install kubeadm
 echo "Running worker.sh on Worker VM ..."
@@ -108,23 +106,13 @@ ssh -o StrictHostKeyChecking=no azureuser@$worker_pub_ip "echo '$join_command' |
 #Untaint Master Node
 ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo kubectl taint nodes master node-role.kubernetes.io/control-plane:NoSchedule-"
 
-
-# Copy nfs.sh to the Master VM and install NFS provisioner on the cluster
-scp -o StrictHostKeyChecking=no nfs.sh azureuser@$master_pub_ip:~
-echo "Running nfs.sh .."
-ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./nfs.sh $master_pvt_ip $nfs_share"
-
-
-# Copy awx.sh to the Master VM amd execute the script to install AWX
-scp -o StrictHostKeyChecking=no awx.sh azureuser@$master_pub_ip:~
-echo "Running awx.sh on Cluster..."
-ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./awx.sh"
 sleep 5
 
 # Copy monitoring.sh to the Master VM
 scp -o StrictHostKeyChecking=no monitoring.sh azureuser@$master_pub_ip:~
 echo "Installing monitoring stack on cluster..."
 ssh -o StrictHostKeyChecking=no azureuser@$master_pub_ip "sudo ./monitoring.sh"
+
 sleep 5
 
 #copying kube-config file to local system
@@ -139,16 +127,8 @@ sed -i "s/https:\/\/[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\:6443/https:\/\/$master_p
 echo "Waiting for Kubernetes API to be reachable..."
 until kubectl get nodes &> /dev/null; do
   echo "Kubernetes API is not yet reachable, retrying in 5 seconds..."
-  sleep 5
+  sleep 10
 done
-
-# Wait for awx-service to exist
-echo "Waiting for awx-service to be created..."
-while ! kubectl get svc awx-service -n awx &> /dev/null; do
-  echo "awx-service not yet created, waiting..."
-  sleep 60
-done
-echo "awx-service exists."
 
 # Wait for all pods in all namespaces to be running
 echo "Waiting for all pods in all namespaces to be running..."
@@ -162,48 +142,16 @@ while true; do
 done
 echo "All pods in all namespaces are running."
 
-
-awx_port=$(kubectl get -n awx svc/awx-service | grep NodePort | awk '{print $5}' | cut -d ':' -f2 | cut -d '/' -f1)
-
-echo "Opening port $awx_port for Worker VM for AWX NodePort"
-# Extract NSG name from the VM's network interface
-vmnicname1=$(az vm show --resource-group $resource_group --name worker --query 'networkProfile.networkInterfaces[0].id' -o tsv | cut -d '/' -f9 | sed -e 's/\"//g' -e 's/\,//g')
-# Fetch NSG name based on the NIC
-nsg_name1=$(az network nic show --resource-group $resource_group --name $vmnicname1 --query 'networkSecurityGroup.id' -o tsv | cut -d '/' -f9)
-# Open port $awx_port on Worker VM for AWX
-az network nsg rule create \
-  --resource-group $resource_group \
-  --nsg-name $nsg_name1 \
-  --name kubernetesApiPort \
-  --protocol Tcp \
-  --priority 500 \
-  --destination-port-range $awx_port \
-  --access Allow
-
-
 #open all the ports!
 kubectl --namespace monitoring port-forward svc/grafana 3000 > /dev/null 2>&1 &
 kubectl --namespace monitoring port-forward svc/prometheus-k8s 9090 > /dev/null 2>&1 &
 kubectl --namespace monitoring port-forward svc/alertmanager-main 9093 > /dev/null 2>&1 &
 
-
+disown
 
 echo "Access Grafana proxy over kube-proxy: http://localhost:3000"
 echo "Access Prometheus over kube-proxy: http://localhost:9090"
 echo "Access Alert-manager over kube-proxy: http://localhost:9093"
-
-# AWX kubectl proxy
-
-awx_password=$(kubectl get secret -n awx awx-admin-password -o go-template='{{range $k,$v := .data}}{{printf "%s: " $k}}{{if not $v}}{{$v}}{{else}}{{$v | base64decode}}{{end}}{{"\n"}}{{end}}')
-sleep 10
-
-disown
-
-echo
-echo "AWX admin password: $awx_password"
-echo "Access AWX: http://$worker_pub_ip:$awx_port"
-echo
-
 ET=$(date +%s)
 timepassd=$((ET - ST))
 echo "Time elapsed: ${timepassd} seconds"

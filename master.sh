@@ -165,17 +165,6 @@ tar xzf ${ETCDCTL_VERSION_FULL}.tar.gz ${ETCDCTL_VERSION_FULL}/etcdctl
 mv ${ETCDCTL_VERSION_FULL}/etcdctl /usr/bin/
 rm -rf ${ETCDCTL_VERSION_FULL} ${ETCDCTL_VERSION_FULL}.tar.gz
 
-
-
-
-# creating dangerous NFS share on root and sharing it
-mkdir $2
-apt install nfs-kernel-server -y
-cat <<EOF | sudo tee /etc/exports
-$2 *(rw,no_root_squash)
-EOF
-systemctl restart nfs-server
-
 # install some dependencies
 apt install git build-essential curl jq  -y
 
